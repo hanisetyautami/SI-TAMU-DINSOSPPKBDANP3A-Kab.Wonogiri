@@ -1,0 +1,22 @@
+{
+  "name": "si-tamu-frontend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@vitejs/plugin-react": "latest",
+    "axios": "^1.20.0",
+    "lucide-react": "^0.546.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-router-dom": "^7.9.3",
+    "tailwindcss": "^4.3.3",
+    "vite": "latest"
+  }
+}

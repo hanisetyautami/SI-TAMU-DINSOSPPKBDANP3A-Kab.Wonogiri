@@ -1,0 +1,1 @@
+import express from "express";import {authenticate} from "../middleware/auth.js";import {getVisitReport} from "../controllers/reportController.js";const r=express.Router();r.get("/visits",authenticate,getVisitReport);export default r;

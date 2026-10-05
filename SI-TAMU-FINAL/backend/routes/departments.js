@@ -1,0 +1,1 @@
+import express from "express";import {authenticate} from "../middleware/auth.js";import {getDepartments} from "../controllers/departmentController.js";const r=express.Router();r.get("/public",getDepartments);r.get("/",authenticate,getDepartments);export default r;

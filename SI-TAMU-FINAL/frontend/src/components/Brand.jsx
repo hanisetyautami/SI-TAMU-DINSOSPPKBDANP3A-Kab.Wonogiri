@@ -1,0 +1,1 @@
+export default function Brand({compact=false}){return <div className={`brand ${compact?"brand-compact":""}`}><img src="/logo.svg" alt="Logo SI-TAMU"/><div><strong>SI-TAMU</strong><span>DINSOSPPKBP3A<br/>KABUPATEN WONOGIRI</span></div></div>}

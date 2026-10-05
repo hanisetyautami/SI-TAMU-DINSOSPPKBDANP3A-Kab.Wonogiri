@@ -1,0 +1,2 @@
+import bcrypt from "bcryptjs";import db from "./config/db.js";import dotenv from "dotenv";dotenv.config();
+const hash=await bcrypt.hash("admin123",10);await db.execute(`INSERT INTO users(name,email,password_hash,role) VALUES(?,?,?,'ADMIN') ON DUPLICATE KEY UPDATE password_hash=VALUES(password_hash),is_active=TRUE`,["Admin SI-TAMU","admin@pemda.go.id",hash]);console.log("Admin siap: admin@pemda.go.id / admin123");await db.end();

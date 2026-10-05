@@ -1,0 +1,1 @@
+import express from "express";import {authenticate} from "../middleware/auth.js";import {getSummary} from "../controllers/dashboardController.js";const r=express.Router();r.get("/summary",authenticate,getSummary);export default r;
