@@ -15,7 +15,10 @@ export function authenticate(req, res, next) {
     const authHeader = req.headers.authorization;
 
     console.log("========== AUTHENTICATE ==========");
-    console.log("Authorization:", authHeader ? "ADA" : "TIDAK ADA");
+    console.log(
+      "Authorization:",
+      authHeader ? "ADA" : "TIDAK ADA"
+    );
 
     // --------------------------------------------------
     // CEK HEADER
@@ -65,24 +68,41 @@ export function authenticate(req, res, next) {
     console.log("JWT VALID");
     console.log("User:", decoded);
 
-    // Simpan data user ke request
+    // Simpan data user
     req.user = decoded;
 
     next();
 
   } catch (error) {
-    console.error("JWT ERROR:", error.message);
+    console.error(
+      "JWT ERROR:",
+      error.name,
+      "-",
+      error.message
+    );
 
+    // --------------------------------------------------
+    // TOKEN EXPIRED
+    // --------------------------------------------------
+    if (error.name === "TokenExpiredError") {
+      return res.status(401).json({
+        success: false,
+        code: "TOKEN_EXPIRED",
+        message:
+          "Sesi login sudah berakhir. Silakan login kembali.",
+      });
+    }
+
+    // --------------------------------------------------
+    // TOKEN INVALID
+    // --------------------------------------------------
     return res.status(401).json({
       success: false,
-      message:
-        error.name === "TokenExpiredError"
-          ? "Token sudah kedaluwarsa."
-          : "Token tidak valid.",
+      code: "TOKEN_INVALID",
+      message: "Token tidak valid. Silakan login kembali.",
     });
   }
 }
-
 
 // ======================================================
 // AUTHORIZE ROLE

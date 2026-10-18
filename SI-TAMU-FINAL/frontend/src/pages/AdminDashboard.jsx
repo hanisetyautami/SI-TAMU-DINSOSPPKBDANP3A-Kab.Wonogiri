@@ -11,6 +11,7 @@ import {
   LayoutDashboard,
   Users,
   FileText,
+  Mail,
   Settings,
   UserCircle,
   LogOut,
@@ -58,6 +59,11 @@ const menuItems = [
     id: "reports",
     label: "Laporan",
     icon: FileText,
+  },
+  {
+    id: "surat",
+    label: "Surat",
+    icon: Mail,
   },
   {
     id: "settings",
@@ -169,6 +175,15 @@ export default function AdminDashboard() {
   // FILTER TAMBAHAN: JENIS KUNJUNGAN DAN KECAMATAN
   const [visitCategory, setVisitCategory] = useState("semua");
   const [selectedKecamatan, setSelectedKecamatan] = useState("");
+
+  /* =======================================================
+     FILTER LAPORAN
+     Tambahan - kode filter kunjungan sebelumnya tetap
+  ======================================================= */
+
+  const [reportKecamatan, setReportKecamatan] = useState("");
+  const [reportYear, setReportYear] = useState("");
+  const [reportMonth, setReportMonth] = useState("");
 
   const [activeMenu, setActiveMenu] =
     useState("dashboard");
@@ -352,6 +367,93 @@ export default function AdminDashboard() {
       );
     } finally {
       setEditVisitorLoading(false);
+    }
+  };
+
+  /* =======================================================
+     HAPUS DATA KUNJUNGAN
+  ======================================================= */
+
+  const handleDeleteVisitor = async (visitor) => {
+    if (!visitor?.id) {
+      alert("ID data kunjungan tidak ditemukan.");
+      return;
+    }
+
+    // Data hasil import Excel adalah data lama dan tidak berada di tabel visitors.
+    // Karena itu data tersebut tidak boleh dihapus melalui endpoint visitors.
+    if (String(visitor.source || "").toUpperCase() === "EXCEL") {
+      alert("Data dari dataset Excel tidak dapat dihapus dari dashboard.");
+      return;
+    }
+
+    const visitorName = visitor.full_name || "data kunjungan ini";
+
+    const confirmed = window.confirm(
+      `Apakah Anda yakin ingin menghapus data kunjungan atas nama "${visitorName}"?\n\nData yang sudah dihapus tidak dapat dikembalikan.`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      const token = getAuthToken();
+
+      if (!token) {
+        alert("Sesi login tidak ditemukan. Silakan login kembali.");
+        return;
+      }
+
+      const response = await axios.delete(
+        `${API_URL}/visitors/${visitor.id}`,
+        {
+          headers: {
+            Accept: "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (response.data?.success === false) {
+        throw new Error(
+          response.data?.message ||
+            "Gagal menghapus data kunjungan."
+        );
+      }
+
+      setVisitors((currentVisitors) =>
+        currentVisitors.filter(
+          (item) => String(item.id) !== String(visitor.id) ||
+            String(item.source || "DATABASE").toUpperCase() === "EXCEL"
+        )
+      );
+
+      setSelectedVisitor((currentVisitor) =>
+        currentVisitor &&
+        String(currentVisitor.id) === String(visitor.id)
+          ? null
+          : currentVisitor
+      );
+
+      alert(
+        response.data?.message ||
+          "Data kunjungan berhasil dihapus."
+      );
+    } catch (error) {
+      console.error("DELETE VISITOR ERROR:", error);
+
+      if (
+        error?.response?.status === 401 ||
+        error?.response?.status === 403
+      ) {
+        alert("Sesi login tidak valid atau sudah berakhir. Silakan login kembali.");
+        return;
+      }
+
+      alert(
+        error?.response?.data?.message ||
+          error?.message ||
+          "Gagal menghapus data kunjungan."
+      );
     }
   };
 
@@ -697,6 +799,33 @@ const updateVisitorStatus = async (
       a.localeCompare(b, "id")
     );
   }, [visitors, getVisitorKecamatan]);
+
+  /* =======================================================
+     DAFTAR TAHUN UNTUK LAPORAN
+     Tambahan - tidak mengubah kecamatanList sebelumnya
+  ======================================================= */
+
+  const reportYearList = useMemo(() => {
+    const years = new Set();
+
+    visitors.forEach((visitor) => {
+      const dateValue =
+        visitor.created_at ||
+        visitor.visit_date ||
+        visitor.tanggal ||
+        visitor.date;
+
+      if (!dateValue) return;
+
+      const date = new Date(dateValue);
+
+      if (!Number.isNaN(date.getTime())) {
+        years.add(date.getFullYear());
+      }
+    });
+
+    return Array.from(years).sort((a, b) => b - a);
+  }, [visitors]);
 
   const filteredVisitors = useMemo(() => {
     const keyword = searchTerm.trim().toLowerCase();
@@ -1058,6 +1187,148 @@ const updateVisitorStatus = async (
   };
 
   /* =======================================================
+     DOWNLOAD LAPORAN BERDASARKAN KECAMATAN / TAHUN / BULAN
+     Tambahan - downloadReport lama tetap dipertahankan
+  ======================================================= */
+
+  const downloadFilteredReport = () => {
+    if (!visitors.length) {
+      alert("Belum ada data kunjungan.");
+      return;
+    }
+
+    const filteredReport = visitors.filter((visitor) => {
+      const dateValue =
+        visitor.created_at ||
+        visitor.visit_date ||
+        visitor.tanggal ||
+        visitor.date;
+
+      if (!dateValue) return false;
+
+      const date = new Date(dateValue);
+
+      if (Number.isNaN(date.getTime())) return false;
+
+      const visitorKecamatan = getVisitorKecamatan(visitor)
+        .trim()
+        .toLowerCase();
+
+      const matchKecamatan =
+        !reportKecamatan ||
+        visitorKecamatan === reportKecamatan.trim().toLowerCase();
+
+      if (!matchKecamatan) return false;
+
+      const matchYear =
+        !reportYear ||
+        date.getFullYear() === Number(reportYear);
+
+      if (!matchYear) return false;
+
+      const matchMonth =
+        !reportMonth ||
+        date.getMonth() + 1 === Number(reportMonth);
+
+      if (!matchMonth) return false;
+
+      return true;
+    });
+
+    if (!filteredReport.length) {
+      alert("Tidak ada data kunjungan sesuai filter yang dipilih.");
+      return;
+    }
+
+    const headers = [
+      "ID",
+      "Kode Pengunjung",
+      "Kode Kunjungan",
+      "Nama",
+      "Jenis Kunjungan",
+      "NIK",
+      "Telepon",
+      "Instansi",
+      "Alamat",
+      "Kecamatan",
+      "Email",
+      "Tujuan Bagian",
+      "Keperluan",
+      "Bertemu Dengan",
+      "Status",
+      "Tanggal",
+    ];
+
+    const rows = filteredReport.map((visitor) => [
+      visitor.id || "",
+      visitor.visitor_code || "",
+      visitor.visit_code || "",
+      visitor.full_name || "",
+      visitor.visit_type || "",
+      visitor.identity_number || "",
+      visitor.phone || "",
+      visitor.institution || "",
+      visitor.address || visitor.alamat || "",
+      getVisitorKecamatan(visitor) || "",
+      visitor.email || "",
+      visitor.department_name || visitor.department || "",
+      visitor.purpose || "",
+      visitor.host_name || "",
+      visitor.status || "",
+      visitor.created_at
+        ? new Date(visitor.created_at).toLocaleString("id-ID")
+        : visitor.visit_date
+        ? new Date(visitor.visit_date).toLocaleString("id-ID")
+        : "",
+    ]);
+
+    const csv = [headers, ...rows]
+      .map((row) =>
+        row
+          .map((value) => `"${String(value).replace(/"/g, '""')}"`)
+          .join(",")
+      )
+      .join("\n");
+
+    const blob = new Blob(["\ufeff" + csv], {
+      type: "text/csv;charset=utf-8;",
+    });
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = url;
+
+    const monthNames = [
+      "Semua-Bulan",
+      "Januari",
+      "Februari",
+      "Maret",
+      "April",
+      "Mei",
+      "Juni",
+      "Juli",
+      "Agustus",
+      "September",
+      "Oktober",
+      "November",
+      "Desember",
+    ];
+
+    const kecamatanName = reportKecamatan || "Semua-Kecamatan";
+    const yearName = reportYear || "Semua-Tahun";
+    const monthName = monthNames[Number(reportMonth) || 0];
+
+    link.download =
+      `Laporan-Kunjungan-${kecamatanName}-${yearName}-${monthName}.csv`;
+
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  /* =======================================================
      MANUAL REGISTRATION
   ======================================================= */
 
@@ -1164,6 +1435,9 @@ const updateVisitorStatus = async (
           onEdit={
             handleEditVisitor
           }
+          onDelete={
+            handleDeleteVisitor
+          }
         />
       </>
     );
@@ -1209,6 +1483,9 @@ const updateVisitorStatus = async (
           }
           onEdit={
             handleEditVisitor
+          }
+          onDelete={
+            handleDeleteVisitor
           }
           showVisitFilters={true}
           visitCategory={visitCategory}
@@ -1288,7 +1565,7 @@ const updateVisitorStatus = async (
 
         <div className="mt-6 rounded-2xl border border-gray-200 bg-white p-7 shadow-sm">
 
-          <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-5">
 
             <div>
               <h2 className="text-xl font-bold text-gray-900">
@@ -1296,23 +1573,104 @@ const updateVisitorStatus = async (
               </h2>
 
               <p className="mt-1 text-sm text-gray-500">
-                Unduh data kunjungan
-                dalam format CSV.
+                Unduh data kunjungan dalam format CSV berdasarkan kecamatan, tahun, dan bulan.
               </p>
             </div>
 
-            <button
-              onClick={
-                downloadReport
-              }
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-bold text-white hover:bg-blue-700"
-            >
-              <Download
-                size={18}
-              />
+            {/* FILTER LAPORAN TAMBAHAN */}
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
 
-              Unduh Laporan
-            </button>
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-gray-700">
+                  Kecamatan
+                </label>
+
+                <select
+                  value={reportKecamatan}
+                  onChange={(e) => setReportKecamatan(e.target.value)}
+                  className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm text-gray-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                >
+                  <option value="">Semua Kecamatan</option>
+
+                  {kecamatanList.map((kecamatan) => (
+                    <option key={kecamatan} value={kecamatan}>
+                      {kecamatan}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-gray-700">
+                  Tahun
+                </label>
+
+                <select
+                  value={reportYear}
+                  onChange={(e) => setReportYear(e.target.value)}
+                  className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm text-gray-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                >
+                  <option value="">Semua Tahun</option>
+
+                  {reportYearList.map((year) => (
+                    <option key={year} value={year}>
+                      {year}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-gray-700">
+                  Bulan
+                </label>
+
+                <select
+                  value={reportMonth}
+                  onChange={(e) => setReportMonth(e.target.value)}
+                  className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm text-gray-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                >
+                  <option value="">Semua Bulan</option>
+                  <option value="1">Januari</option>
+                  <option value="2">Februari</option>
+                  <option value="3">Maret</option>
+                  <option value="4">April</option>
+                  <option value="5">Mei</option>
+                  <option value="6">Juni</option>
+                  <option value="7">Juli</option>
+                  <option value="8">Agustus</option>
+                  <option value="9">September</option>
+                  <option value="10">Oktober</option>
+                  <option value="11">November</option>
+                  <option value="12">Desember</option>
+                </select>
+              </div>
+
+            </div>
+
+            <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
+
+              {/* TOMBOL LAMA - TETAP DIPERTAHANKAN */}
+              <button
+                type="button"
+                onClick={downloadReport}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-bold text-white hover:bg-blue-700"
+              >
+                <Download size={18} />
+                Unduh Semua Laporan
+              </button>
+
+              {/* TOMBOL BARU */}
+              <button
+                type="button"
+                onClick={downloadFilteredReport}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-green-600 px-5 py-3 text-sm font-bold text-white hover:bg-green-700"
+              >
+                <Download size={18} />
+                Unduh Sesuai Filter
+              </button>
+
+            </div>
 
           </div>
 
@@ -1506,6 +1864,241 @@ const updateVisitorStatus = async (
     );
 
   /* =======================================================
+     SURAT / UNDANGAN TERSURAT
+     Data diambil dari visitors yang sudah ada.
+     Tidak membuat tabel atau API baru.
+  ======================================================= */
+
+  const renderSurat = () => {
+    const suratVisitors = visitors.filter((visitor) => {
+      const type = String(visitor?.visit_type || "")
+        .trim()
+        .toLowerCase();
+
+      return (
+        type.includes("undangan") ||
+        type.includes("tersurat")
+      );
+    });
+
+    const getTanggal = (visitor) => {
+      const value =
+        visitor?.check_in_at ||
+        visitor?.created_at ||
+        visitor?.tanggal_datang ||
+        visitor?.visit_date;
+
+      if (!value) return "-";
+
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return String(value);
+
+      return date.toLocaleDateString("id-ID", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      });
+    };
+
+    const getAlamat = (visitor) =>
+      visitor?.address ||
+      visitor?.alamat ||
+      visitor?.institution ||
+      visitor?.institution_name ||
+      "-";
+
+    const getKeperluan = (visitor) =>
+      visitor?.purpose ||
+      visitor?.aduan ||
+      visitor?.keperluan ||
+      visitor?.letter_subject ||
+      visitor?.perihal ||
+      "-";
+
+    const getTujuan = (visitor) => {
+      const type = String(visitor?.visit_type || "")
+        .trim()
+        .toLowerCase();
+
+      const tujuan =
+        visitor?.department_name ||
+        visitor?.department ||
+        visitor?.tujuan_bagian ||
+        visitor?.departmentName ||
+        visitor?.tempat_pelayanan ||
+        "-";
+
+      // Untuk masyarakat, pertahankan nilai dataset seperti SLRT/MPP.
+      if (type.includes("masyarakat")) {
+        const normalized = String(tujuan).trim().toLowerCase();
+
+        if (normalized.includes("slrt")) return "SLRT";
+        if (normalized.includes("mpp")) return "MPP";
+      }
+
+      return tujuan;
+    };
+
+    return (
+      <>
+        <PageHeader
+          title="Surat"
+          subtitle="Data kunjungan dengan jenis Undangan Tersurat."
+        />
+
+        <div className="mb-6 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
+          <StatCard
+            title="Total Undangan Tersurat"
+            value={suratVisitors.length}
+            icon={Mail}
+            iconClass="bg-purple-50 text-purple-700"
+          />
+
+          <StatCard
+            title="Sudah Selesai"
+            value={
+              suratVisitors.filter((visitor) =>
+                String(visitor?.status || "")
+                  .trim()
+                  .toLowerCase()
+                  .includes("selesai")
+              ).length
+            }
+            icon={CheckCircle2}
+            iconClass="bg-green-50 text-green-700"
+          />
+
+          <StatCard
+            title="Tujuan Bagian"
+            value={
+              new Set(
+                suratVisitors
+                  .map((visitor) => getTujuan(visitor))
+                  .filter((value) => value && value !== "-")
+              ).size
+            }
+            icon={Building2}
+            iconClass="bg-blue-50 text-blue-700"
+          />
+        </div>
+
+        <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+          <div className="flex flex-col gap-3 border-b border-gray-100 p-6 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-xl font-bold text-gray-900">
+                Data Undangan Tersurat
+              </h2>
+              <p className="mt-1 text-sm text-gray-500">
+                Data diambil dari kunjungan yang sudah tersimpan di database.
+              </p>
+            </div>
+
+            <span className="inline-flex w-fit items-center rounded-full bg-purple-50 px-4 py-2 text-sm font-bold text-purple-700">
+              {suratVisitors.length} Data
+            </span>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="min-w-[1200px] w-full text-left">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50 text-xs font-bold uppercase tracking-wide text-gray-500">
+                  <th className="px-6 py-4">Tanggal</th>
+                  <th className="px-6 py-4">Nama Tamu</th>
+                  <th className="px-6 py-4">Alamat</th>
+                  <th className="px-6 py-4">Keperluan</th>
+                  <th className="px-6 py-4">Tujuan Bagian</th>
+                  <th className="px-6 py-4">Status</th>
+                  <th className="px-6 py-4 text-center">Aksi</th>
+                </tr>
+              </thead>
+
+              <tbody className="divide-y divide-gray-100">
+                {loading ? (
+                  <tr>
+                    <td colSpan="7" className="px-6 py-16 text-center text-gray-500">
+                      Memuat data surat...
+                    </td>
+                  </tr>
+                ) : suratVisitors.length === 0 ? (
+                  <tr>
+                    <td colSpan="7" className="px-6 py-16 text-center text-gray-400">
+                      <Mail size={40} className="mx-auto mb-3" />
+                      <p className="font-semibold">
+                        Belum ada data Undangan Tersurat.
+                      </p>
+                    </td>
+                  </tr>
+                ) : (
+                  suratVisitors.map((visitor) => (
+                    <tr
+                      key={
+                        visitor?.id ||
+                        visitor?.visit_code ||
+                        visitor?.visitor_code ||
+                        `${visitor?.full_name}-${visitor?.created_at}`
+                      }
+                      className="hover:bg-gray-50"
+                    >
+                      <td className="whitespace-nowrap px-6 py-5 text-sm text-gray-600">
+                        {getTanggal(visitor)}
+                      </td>
+
+                      <td className="px-6 py-5">
+                        <p className="font-bold text-gray-900">
+                          {visitor?.full_name || visitor?.nama || "-"}
+                        </p>
+                        <p className="mt-1 text-xs text-gray-400">
+                          {visitor?.identity_number || visitor?.nik || "-"}
+                        </p>
+                      </td>
+
+                      <td className="max-w-[280px] px-6 py-5 text-sm text-gray-600">
+                        <span className="line-clamp-2">
+                          {getAlamat(visitor)}
+                        </span>
+                      </td>
+
+                      <td className="max-w-[280px] px-6 py-5 text-sm text-gray-600">
+                        <span className="line-clamp-2">
+                          {getKeperluan(visitor)}
+                        </span>
+                      </td>
+
+                      <td className="px-6 py-5 text-sm text-gray-600">
+                        <div className="flex items-center gap-2">
+                          <Building2 size={16} className="shrink-0 text-gray-400" />
+                          <span>{getTujuan(visitor)}</span>
+                        </div>
+                      </td>
+
+                      <td className="px-6 py-5">
+                        <span className="inline-flex rounded-full bg-gray-100 px-3 py-1.5 text-xs font-bold text-gray-700">
+                          {visitor?.status || "-"}
+                        </span>
+                      </td>
+
+                      <td className="px-6 py-5 text-center">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedVisitor(visitor)}
+                          className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-bold text-blue-600 hover:bg-blue-50"
+                        >
+                          <Eye size={16} />
+                          Detail
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </>
+    );
+  };
+
+  /* =======================================================
      CONTENT
   ======================================================= */
 
@@ -1518,6 +2111,9 @@ const updateVisitorStatus = async (
 
     reports:
       renderReports,
+
+    surat:
+      renderSurat,
 
     settings:
       renderSettings,
@@ -1917,6 +2513,7 @@ function VisitorSection({
   onRefresh,
   onDetail,
   onEdit,
+  onDelete,
   showVisitFilters = false,
   visitCategory = "semua",
   setVisitCategory = () => {},
@@ -2167,6 +2764,9 @@ function VisitorSection({
                     onEdit={
                       onEdit
                     }
+                    onDelete={
+                      onDelete
+                    }
                   />
                 )
               )
@@ -2243,6 +2843,7 @@ function VisitorRow({
   visitor,
   onDetail,
   onEdit,
+  onDelete,
 }) {
   const type =
     String(
@@ -2364,6 +2965,8 @@ function VisitorRow({
 
         <span className="line-clamp-2">
           {visitor.purpose ||
+            visitor.aduan ||
+            visitor.keperluan ||
             "-"}
         </span>
 
@@ -2382,6 +2985,8 @@ function VisitorRow({
 
           {visitor.department_name ||
             visitor.department ||
+            visitor.tujuan_bagian ||
+            visitor.tempat_pelayanan ||
             "-"}
 
         </div>
@@ -2441,6 +3046,18 @@ function VisitorRow({
             >
               <Pencil size={16} />
               Edit
+            </button>
+          )}
+
+          {onDelete && visitor.id && (
+            <button
+              type="button"
+              onClick={() => onDelete(visitor)}
+              className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-50"
+              title="Hapus data kunjungan"
+            >
+              <Trash2 size={16} />
+              Hapus
             </button>
           )}
 

@@ -245,11 +245,14 @@ setSuccess(responseData?.data);
     }
   };
 
+  const masyarakatDepartments = [
+    { id: "SLRT", name: "SLRT" },
+    { id: "MPP", name: "MPP" },
+  ];
+
   const displayedDepartments =
     form.visit_type === "masyarakat"
-      ? departments.filter((department) =>
-          String(department.name || "").toLowerCase() === "pelayanan sosial"
-        )
+      ? masyarakatDepartments
       : departments.filter((department) =>
           String(department.name || "").toLowerCase() !== "pelayanan sosial"
         );
@@ -529,7 +532,9 @@ setSuccess(responseData?.data);
                     />
                   </div>
                   <p className="text-[11px] text-gray-500">
-                    Untuk masyarakat, pilih Pelayanan Sosial. Untuk kunjungan dinas/undangan, pilih bagian yang dituju.
+                    {form.visit_type === "masyarakat"
+                      ? "Untuk masyarakat, pilih layanan yang dituju: SLRT atau MPP."
+                      : "Untuk kunjungan dinas/undangan, pilih bagian yang dituju."}
                   </p>
                 </div>
 
@@ -593,7 +598,7 @@ setSuccess(responseData?.data);
 
               <div className="mt-5 space-y-2">
                 <label className="block text-sm font-semibold text-gray-700">
-                  Maksud & Keperluan
+                  {form.visit_type === "masyarakat" ? "Aduan / Keperluan" : "Maksud & Keperluan"}
                   <span className="ml-1 text-red-500">*</span>
                 </label>
                 <textarea
@@ -602,7 +607,11 @@ setSuccess(responseData?.data);
                   onChange={handleChange}
                   required
                   rows={4}
-                  placeholder="Tuliskan keperluan kunjungan Anda secara singkat"
+                  placeholder={
+                    form.visit_type === "masyarakat"
+                      ? "Tuliskan aduan atau keperluan pelayanan"
+                      : "Tuliskan keperluan kunjungan Anda secara singkat"
+                  }
                   className="w-full resize-none rounded-lg border border-gray-200 px-4 py-3 text-sm text-gray-700 outline-none transition placeholder:text-gray-400 focus:border-[#00864F] focus:ring-2 focus:ring-[#00864F]/10"
                 />
               </div>
